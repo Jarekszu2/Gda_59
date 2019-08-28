@@ -1,5 +1,6 @@
 package packJdbc;
 
+import java.util.List;
 import java.util.Scanner;
 
 public class ScannerWork {
@@ -40,5 +41,9 @@ public class ScannerWork {
         boolean flag = false;
         flag = Boolean.parseBoolean(tekstBoolean);
         return flag;
+    }
+
+    public void printStudentList(List<Student> studentList) {
+        studentList.forEach(System.out::println);
     }
 }

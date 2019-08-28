@@ -1,78 +1,66 @@
 package packJdbc;
 
-import com.mysql.cj.jdbc.MysqlDataSource;
+/*
+Zasady postępowania.
+0. tworzymy klasę obiektu, który ma być przechowywany w database
+1. w katalogu resources zakładam plik jdbc.properties i zapisuję w nim parametry bazy danych
+2. tworzę klasę MysqlConnectionParameters (pola, konstruktor, metody)
+3. tworzę klasę MysqlConnection (pola, konstruktor, metody)
+4. tworzę interface NameQueries (bo w interface wygodnie jest zapisać zmienne bo są od razu final)
+   i zapisuję w nim zapytania do database
+5. tworzę klasę NameDao(data access object) z polem MysqlConnection, konstruktorem, i metodami
+   realizującymi zadania opisane w zapytaniach NameQueries
+   - metody składają się z następujących części
+   a) nawiązanie połączenia z database
+   b) przygotowanie statement w powiązaniu z connection i query(NameQueries)
+      możemy wybrać dwie opcje: 1 lub 2 parametry(np.)
+      ... connection.prepareStatement(QUERY)
+      ... connection.prepareStatement(QUERY, Statement.RETURN_GENERATED_KEYS)
+   c) ustawienie parametrów statement
+      statement.set...(setInt lub setString lub setDouble...) tzn. np. setInt(1, deletedId)
+      ustawiamy takie parametry i tyle i w takiej kolejności ile mamy ? w QUERY
+   d) wykonanie statement - execute:
+      jeśli wybraliśmy:
+      b) 1 parametr to wynikiem będzie czy otrzymaliśmy dane czy nie i realizujemy przez:
+         - statement.execute();
+         - boolean success = statement.execute(); (gdy nie ma wyniku np. insert)
+         - ResultSet resultSet = statement.executeQery(); (gdy wynikiem jest np. lista - select)
+      b) 2 parametry to wynikiem będzie int, który informuje ile rekordów zostało zmienionych; realizujemy przez:
+         - int affectedRecords = statement.executeUpdate();
+         - ResultSet resultSet = statement.getGeneratedKeys();
+         tego inta możemy jakoś wykorzystać, np. wyświetlić jako potwierdzenie realizacji zadania
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+      nie ma znaczenia, krórą formę execute wybierzemy
+   e) wyciągamy dane z resultSet i zapisujemy je (w zależności od treście QUERY) do objectu, listy, itp.
+      (metoda: resultSet.next(), przechodzi do kolejnych pozycji w resultSet (startuje przed resultSet)
+      i albo return albo void
+ */
+
+import java.io.IOException;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class Main {
-    private static final String INSERT_QUERY = "insert into students\n" +
-            "(name, age, average, alive)\n" +
-            "values(?, ?, ?, ?);";
-
-    private static final String CREATE_TABLE_QUERY = "create table if not exists `students` (\n" +
-            "`id` int not null auto_increment primary key,\n" +
-            "`name` varchar(255) not null,\n" +
-            "`age` int not null,\n" +
-            "`average` double not null,\n" +
-            "alive tinyint not null);";
-
-    private static final String DELETE_QUERY = "delete from `students` where `id` = ?";
-
-    private static final String SELECT_ALL_QUERY = "select * from `students`";
-
-    private static final String SELECT_BY_ID_QUERY = "select * from `students` where `id` = ?";
-
-    private static final String SELECT_BY_NAME_QUERY = "select * from `students` where `name` = ?";
-
-    private static final String SELECT_BETWEEN_FIRST_SECOND_QUERY = "select * from `students` where `age` between ? and ?";
-
-    private static final String DB_HOST = "localhost"; // 127.0.0.1
-    private static final String DB_PORT = "3306";
-    private static final String DB_USERNAME = "root";
-    private static final String DB_PASSWORD = "root";
-    private static final String DB_NAME = "jdbc_students";
 
 
     // 1. stworzenie w workbenchu bazy danych(schema): jdbc_students (create database jdbc_students)
     public static void main(String[] args) {
-        MysqlDataSource dataSource = new MysqlDataSource();
-
-        dataSource.setPort(Integer.parseInt(DB_PORT));
-        dataSource.setUser(DB_USERNAME);
-        dataSource.setServerName(DB_HOST);
-        dataSource.setPassword(DB_PASSWORD);
-        dataSource.setDatabaseName(DB_NAME);
-
+        StudentDao studentDao;
         try {
-            dataSource.setServerTimezone("Europe/Warsaw");
-            dataSource.setUseSSL(false);
+            studentDao = new StudentDao();
         } catch (SQLException e) {
+            System.err.println("Student dao cannot be created. Mysql error.");
+            System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
-        }
-
-        Connection connection;
-        try {
-            connection = dataSource.getConnection();
-//            System.out.println("Hurra!");
-
-//            Student student = new Student(null, "Janek", 20, 3.0, true);
-
-//            try(PreparedStatement statement = connection.prepareStatement(CREATE_TABLE_QUERY)) {
-//                statement.execute();
-//            }
-
-//            insertStudent(connection, student);
-
-        } catch (SQLException e) {
-            e.printStackTrace();
+            return;
+        } catch (IOException e) {
+            System.err.println("Configuration file error.");
+            System.err.println("Error: " + e.getMessage());
             return;
         }
 
+//        StudentDao studentDao = new StudentDao();
         System.out.println();
         System.out.println();
         System.out.println("Wybierz działanie:\n" +
@@ -82,16 +70,17 @@ public class Main {
                 " d) select by id\n" +
                 " e) select by name\n" +
                 " f) select where age between\n" +
+                " g) select where name like\n" +
                 " w) koniec");
 
         ScannerWork scannerWork = new ScannerWork();
         boolean flag = false;
         do {
             System.out.println();
-            System.out.println("Wybierz:\n a(dodaj)\n b(usuń)\n c(select all)\n d(select by id)\n e(select by name)" +
-                    "\n f(selectt where age between)\n w(koniec)");
+            System.out.println("Wybierz:\n a(add student)\n b(delete student)\n c(select all students)\n d(find student by id)\n e(select students by name)" +
+                    "\n f(select students where age between)\n g(select students where name like)\n w(koniec)");
             char znak = scannerWork.wybierzChar();
-            switch(znak) {
+            switch (znak) {
                 case 'a':
                     System.out.println("Podaj imię:");
                     String name = scannerWork.getString();
@@ -104,7 +93,7 @@ public class Main {
 
                     Student student = new Student(null, name, age, average, flaga);
                     try {
-                        insertStudent(connection, student);
+                        studentDao.insertStudent(student);
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
@@ -113,14 +102,15 @@ public class Main {
                     System.out.println("Podaj id do usunięcia:");
                     int id = scannerWork.getInt();
                     try {
-                        deleteStudent(connection, id);
+                        studentDao.deleteStudentById(id);
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
                     break;
                 case 'c':
                     try {
-                        listAllStudents(connection);
+                        List<Student> studentListC = studentDao.listAllStudents();
+                        scannerWork.printStudentList(studentListC);
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
@@ -129,7 +119,11 @@ public class Main {
                     System.out.println("Podaj id do selecta:");
                     int idSelect = scannerWork.getInt();
                     try {
-                        getByIdStudent(connection, idSelect);
+                        Optional<Student> optSt = studentDao.getStudentById(idSelect);
+                        if (optSt.isPresent()) {
+                            Student stud = optSt.get();
+                            System.out.println(stud);
+                        }
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
@@ -138,7 +132,8 @@ public class Main {
                     System.out.println("Podaj name do selecta:");
                     String nameE = scannerWork.getString();
                     try {
-                        getByNameStudent(connection, nameE);
+                        List<Student> studentListE = studentDao.getListByStudentName(nameE);
+                        scannerWork.printStudentList(studentListE);
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
@@ -149,7 +144,18 @@ public class Main {
                     System.out.println("Podaj górny zakrres wyszukiwania wieku studenta:");
                     int second = scannerWork.getInt();
                     try {
-                        listWhereAgeBetween(connection, first, second);
+                        List<Student> studentListF = studentDao.listWhereAgeBetween(first, second);
+                        scannerWork.printStudentList(studentListF);
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                    }
+                    break;
+                case 'g':
+                    System.out.println("Podaj frazę do wyszukiwania imienia:");
+                    String tekstG = scannerWork.getString();
+                    try {
+                        List<Student> studentListG = studentDao.listWhereNameLike(tekstG);
+                        scannerWork.printStudentList(studentListG);
                     } catch (SQLException e) {
                         e.printStackTrace();
                     }
@@ -158,131 +164,50 @@ public class Main {
                     flag = true;
                     break;
             }
-        } while(!flag);
-    }
-
-    private static void insertStudent(Connection connection, Student student) throws SQLException {
-        try(PreparedStatement statement = connection.prepareStatement(INSERT_QUERY)) {
-            statement.setString(1, student.getName());
-            statement.setInt(2, student.getAge());
-            statement.setDouble(3, student.getAverage());
-            statement.setBoolean(4, student.isAlive());
-
-            boolean success = statement.execute();
-
-//            if(success) {
-//                System.out.println("Sukces!");
-//            }
-        }
-    }
-
-    private static void deleteStudent(Connection connection, int deletedId) throws SQLException {
-        try(PreparedStatement statement = connection.prepareStatement(DELETE_QUERY)) {
-            statement.setInt(1, deletedId);
-
-            boolean success = statement.execute();
-
-            System.out.println("Usunięto studenta o id = " + deletedId);
-
-//            if(success) {
-//                System.out.println("Sukces!");
-//            }
-        }
-    }
-
-    private static void listAllStudents(Connection connection) throws SQLException {
-        List<Student> studentList = new ArrayList<>();
-        try(PreparedStatement statement = connection.prepareStatement(SELECT_ALL_QUERY)) {
-            ResultSet resultSet = statement.executeQuery();
-
-            while (resultSet.next()) {
-                 Student student = new Student();
-
-                student.setId(resultSet.getInt(1));
-                student.setName(resultSet.getString(2));
-                student.setAge(resultSet.getInt(3));
-                student.setAverage(resultSet.getDouble(4));
-                student.setAlive(resultSet.getBoolean(5));
-
-                studentList.add(student);
-            }
-        }
-
-        for (Student student : studentList) {
-            System.out.println(student);
-        }
-    }
-
-    private static void getByIdStudent(Connection connection, int searchedId) throws SQLException {
-        try(PreparedStatement statement = connection.prepareStatement(SELECT_BY_ID_QUERY)) {
-            statement.setInt(1, searchedId);
-
-            ResultSet resultSet = statement.executeQuery();
-            if (resultSet.next()) {// jeśli jest rekord
-                Student student = new Student();
-
-                student.setId(resultSet.getInt(1));
-                student.setName(resultSet.getString(2));
-                student.setAge(resultSet.getInt(3));
-                student.setAverage(resultSet.getDouble(4));
-                student.setAlive(resultSet.getBoolean(5));
-
-                System.out.println(student);
-            }
-            else {
-                System.out.println("Nie udało sie odnależć studenta.");
-            }
-        }
-    }
-
-    private static void getByNameStudent(Connection connection, String searchedName) throws SQLException {
-        try(PreparedStatement statement = connection.prepareStatement(SELECT_BY_NAME_QUERY)) {
-            // Uwaga: zapis do wyszukiwania Stringów like "tekst": %tekst%
-            statement.setString(1, "%" + searchedName + "%");
-
-            ResultSet resultSet = statement.executeQuery();
-            if (resultSet.next()) {// jeśli jest rekord
-                Student student = new Student();
-
-                student.setId(resultSet.getInt(1));
-                student.setName(resultSet.getString(2));
-                student.setAge(resultSet.getInt(3));
-                student.setAverage(resultSet.getDouble(4));
-                student.setAlive(resultSet.getBoolean(5));
-
-                System.out.println(student);
-            }
-            else {
-                System.out.println("Nie udało sie odnależć studenta.");
-            }
-        }
-    }
-
-    private static void listWhereAgeBetween(Connection connection, int first, int second) throws SQLException {
-        List<Student> studentList = new ArrayList<>();
-        try(PreparedStatement statement = connection.prepareStatement(SELECT_BETWEEN_FIRST_SECOND_QUERY)) {
-            statement.setInt(1, first);
-            statement.setInt(2, second);
-
-            ResultSet resultSet = statement.executeQuery();
-
-            while (resultSet.next()) {
-                Student student = new Student();
-
-                student.setId(resultSet.getInt(1));
-                student.setName(resultSet.getString(2));
-                student.setAge(resultSet.getInt(3));
-                student.setAverage(resultSet.getDouble(4));
-                student.setAlive(resultSet.getBoolean(5));
-
-                studentList.add(student);
-            }
-        }
-
-        for (Student student : studentList) {
-            System.out.println(student);
-        }
+        } while (!flag);
     }
 }
 
 
+
+
+
+
+
+//
+//
+//
+//
+//
+//        for (Student student : studentList) {
+//            System.out.println(student);
+//        }
+//    }
+//
+//    private static void listWhereNameLike(Connection connection, String nameLike) throws SQLException {
+//        List<Student> studentList = new ArrayList<>();
+//        try(PreparedStatement statement = connection.prepareStatement(SELECT_WHERE_NAME_LIKE_QUERY)) {
+//            statement.setString(1, "%" + nameLike + "%");
+//
+//            ResultSet resultSet = statement.executeQuery();
+//
+//            while (resultSet.next()) {
+//                Student student = new Student();
+//
+//                student.setId(resultSet.getInt(1));
+//                student.setName(resultSet.getString(2));
+//                student.setAge(resultSet.getInt(3));
+//                student.setAverage(resultSet.getDouble(4));
+//                student.setAlive(resultSet.getBoolean(5));
+//
+//                studentList.add(student);
+//            }
+//        }
+//
+//        for (Student student : studentList) {
+//            System.out.println(student);
+//        }
+//    }
+//}
+//
+//
