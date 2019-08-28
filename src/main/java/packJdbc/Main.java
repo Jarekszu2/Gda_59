@@ -2,9 +2,13 @@ package packJdbc;
 
 /*
 Zasady postępowania.
+0. tworzymy w MySQL Workbench database (create database Name;), (use Name;)
+0. Intelij IDEA - zakładamy nowy projekt (+ repozytorium na GitHubie) i w POM'ie dodajemy dependencje: mysql i org.projectlombok
 0. tworzymy klasę obiektu, który ma być przechowywany w database
+   uwaga: jak tworzymy pole ID (pewnie będzie Primary Key, Auto_Increment) to robimy typ Integer, (Long), żeby można było dodawać null'a
+   tworzymy konstruktor bez pola ID (żeby łatwo robić insert (jak jest Auto_Increment i null na ID, to ID się samo ustawi)
 1. w katalogu resources zakładam plik jdbc.properties i zapisuję w nim parametry bazy danych
-2. tworzę klasę MysqlConnectionParameters (pola, konstruktor, metody)
+2. tworzę klasę MysqlConnectionParameters (pola, konstruktor, metody) - pamiętać o geterach (@Getter)
 3. tworzę klasę MysqlConnection (pola, konstruktor, metody)
 4. tworzę interface NameQueries (bo w interface wygodnie jest zapisać zmienne bo są od razu final)
    i zapisuję w nim zapytania do database
